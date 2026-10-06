@@ -1,0 +1,288 @@
+<title>Notice Tracker</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: summary strip on top, toolbar, scrollable ledger table, slide-in record form. Ledger/ink-and-teal palette. */
+:root{
+  --bg:#f3f5f4; --surface:#ffffff; --fg:#17211f; --muted:#5d6b67; --line:#d9dfdd;
+  --accent:#0f6b63; --accent-fg:#ffffff; --accent-soft:#dcefec;
+  --bad:#b3261e; --bad-soft:#fbe4e2; --warn:#8a5a00; --warn-soft:#fbefd0; --ok:#1d6b3a; --ok-soft:#dff1e4; --idle:#55605d; --idle-soft:#e7ebea;
+  --font:'IBM Plex Sans',system-ui,sans-serif; --mono:'IBM Plex Mono',ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0e1514; --surface:#162120; --fg:#e4ecea; --muted:#92a39f; --line:#2a3a38;
+  --accent:#4fc2b6; --accent-fg:#06201d; --accent-soft:#1a3a37;
+  --bad:#ff9b92; --bad-soft:#3d1d1b; --warn:#f2c35c; --warn-soft:#3a2d0e; --ok:#7fd69a; --ok-soft:#15301e; --idle:#a5b3b0; --idle-soft:#223130; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1514; --surface:#162120; --fg:#e4ecea; --muted:#92a39f; --line:#2a3a38;
+  --accent:#4fc2b6; --accent-fg:#06201d; --accent-soft:#1a3a37;
+  --bad:#ff9b92; --bad-soft:#3d1d1b; --warn:#f2c35c; --warn-soft:#3a2d0e; --ok:#7fd69a; --ok-soft:#15301e; --idle:#a5b3b0; --idle-soft:#223130; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:14px/1.45 var(--font);padding-inline:16px;padding-block:20px}
+.wrap{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+h1{font-size:22px;font-weight:600;margin:0;letter-spacing:-.01em}
+.sub{color:var(--muted);margin:2px 0 0}
+.top{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px 14px;min-width:0}
+.stat .k{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+.stat .v{font:500 24px var(--mono);margin-top:4px;font-variant-numeric:tabular-nums}
+.stat.bad .v{color:var(--bad)} .stat.warn .v{color:var(--warn)}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.bar .grow{flex:1 1 220px;min-width:0}
+input,select,textarea,button{font:inherit;color:var(--fg)}
+input,select,textarea{background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:7px 9px;width:100%;min-width:0}
+textarea{resize:vertical;min-height:70px}
+input[readonly]{background:var(--idle-soft);color:var(--muted)}
+.bar select{width:auto}
+button{background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:7px 12px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:500}
+button.danger{color:var(--bad)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.tablebox{background:var(--surface);border:1px solid var(--line);border-radius:6px;overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:980px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;cursor:pointer;user-select:none;background:var(--surface);position:sticky;top:0}
+th.sorted::after{content:" ▲"} th.sorted.desc::after{content:" ▼"}
+tbody tr{cursor:pointer} tbody tr:hover{background:var(--accent-soft)}
+td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+td.mono{font-family:var(--mono)}
+.pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;font-weight:500}
+.p-bad{background:var(--bad-soft);color:var(--bad)} .p-warn{background:var(--warn-soft);color:var(--warn)} .p-ok{background:var(--ok-soft);color:var(--ok)} .p-idle{background:var(--idle-soft);color:var(--idle)}
+.empty{padding:28px;text-align:center;color:var(--muted)}
+.note{color:var(--muted);font-size:12px}
+.ex{font-size:11px;color:var(--warn);margin-left:6px}
+/* drawer */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:5}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(560px,100%);background:var(--bg);border-left:1px solid var(--line);z-index:6;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px)}
+.dhead{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line);background:var(--surface)}
+.dhead h2{margin:0;font-size:16px}
+.dbody{overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:18px;flex:1}
+fieldset{border:0;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+legend{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600;padding:0;margin-bottom:8px;float:left;width:100%}
+fieldset>legend+*{clear:both}
+label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);min-width:0}
+label.wide{grid-column:1/-1}
+.dfoot{display:flex;gap:8px;padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);background:var(--surface)}
+.dfoot .sp{flex:1}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:6px;z-index:9}
+</style>
+
+<div class="wrap">
+  <div class="top">
+    <div><h1>Notice Tracker</h1><p class="sub">Tax notices, deadlines and responses in one ledger.</p></div>
+    <div class="bar">
+      <button id="btnImport">Import Excel</button>
+      <button id="btnXlsx">Export Excel</button>
+      <button id="btnCsv">Copy CSV</button>
+      <button id="btnAdd" class="primary">Add notice</button>
+      <input id="file" type="file" accept=".xlsx,.xls,.csv" hidden>
+    </div>
+  </div>
+  <div class="stats" id="stats"></div>
+  <div class="bar">
+    <input id="q" class="grow" type="search" placeholder="Search notice #, entity, issue, owner, notes">
+    <select id="fStatus"><option value="">All statuses</option></select>
+    <select id="fPriority"><option value="">All priorities</option></select>
+    <select id="fDeadline"><option value="">All deadlines</option></select>
+  </div>
+  <div class="tablebox"><table><thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody></table><div id="empty" class="empty" hidden></div></div>
+  <div class="note" id="foot"></div>
+</div>
+<div id="drawerHost"></div>
+<div id="toastHost"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+(function(){
+// Fields in the exact order of row 1 of GUI-Trial-App-1.xlsx
+var FIELDS=[
+ {k:'Notice #',t:'text',sec:'Notice'},{k:'Date',t:'date',sec:'Notice'},{k:'Theater',t:'text',sec:'Notice'},{k:'Entity',t:'text',sec:'Notice'},
+ {k:'Tax',t:'money',sec:'Amounts'},{k:'Interest',t:'money',sec:'Amounts'},{k:'Penalty',t:'money',sec:'Amounts'},
+ {k:'Issue',t:'text',sec:'Notice',wide:1},
+ {k:'Response Date',t:'date',sec:'Deadlines'},{k:'Deadline',t:'date',sec:'Deadlines'},
+ {k:'Days Remaining',t:'calc',sec:'Deadlines'},{k:'Deadline Status',t:'calc',sec:'Deadlines'},
+ {k:'Priority',t:'select',opts:['High','Medium','Low'],sec:'Handling'},{k:'Owner',t:'text',sec:'Handling'},
+ {k:'Status',t:'select',opts:['New','In Progress','Responded','Resolved'],sec:'Handling'},
+ {k:'Date Responded',t:'date',sec:'Handling'},{k:'Date Resolved',t:'date',sec:'Handling'},
+ {k:'Notes',t:'area',sec:'Content',wide:1},{k:'Source',t:'text',sec:'Content',wide:1},
+ {k:'Summary',t:'area',sec:'Content',wide:1},{k:'Draft Letter',t:'area',sec:'Content',wide:1},
+ {k:'Source ID',t:'text',sec:'System IDs'},{k:'Summary ID',t:'text',sec:'System IDs'},{k:'Draft Letter ID',t:'text',sec:'System IDs'},
+ {k:'Last Sync',t:'calc',sec:'System IDs'}
+];
+var COLS=['Notice #','Date','Entity','Issue','Tax','Deadline','Days Remaining','Deadline Status','Priority','Owner','Status'];
+var NUMS={'Tax':1,'Days Remaining':1};
+var KEY='notice-tracker-v1';
+var rows=[],sortK='Deadline',sortDesc=false,editing=null;
+
+function $(id){return document.getElementById(id)}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function today(){var d=new Date();return new Date(d.getFullYear(),d.getMonth(),d.getDate())}
+function parseD(v){if(!v)return null;if(v instanceof Date)return new Date(v.getFullYear(),v.getMonth(),v.getDate());
+  if(typeof v==='number'){var d=new Date(Math.round((v-25569)*864e5));return new Date(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate())}
+  var m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(v));if(m)return new Date(+m[1],+m[2]-1,+m[3]);
+  var d2=new Date(v);return isNaN(d2)?null:new Date(d2.getFullYear(),d2.getMonth(),d2.getDate())}
+function normDate(v){var d=parseD(v);return d?iso(d):''}
+function money(v){var n=parseFloat(String(v).replace(/[^0-9.\-]/g,''));return isNaN(n)?'':n}
+function fmtMoney(v){return v===''||v==null?'':Number(v).toLocaleString('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0})}
+
+// Calculated fields
+function calc(r){
+  var dl=parseD(r['Deadline']),closed=r['Status']==='Resolved'||!!r['Date Resolved'];
+  var days='',status='';
+  if(dl){days=Math.round((dl-today())/864e5)}
+  if(closed)status='Resolved';
+  else if(days==='')status='No deadline';
+  else if(days<0)status='Overdue';
+  else if(days<=7)status='Due soon';
+  else status='On track';
+  return {days:closed?'':days,status:status};
+}
+function withCalc(r){var c=calc(r);r['Days Remaining']=c.days;r['Deadline Status']=c.status;return r}
+
+function load(){try{var s=localStorage.getItem(KEY);if(s){rows=JSON.parse(s);return}}catch(e){}rows=samples()}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(rows))}catch(e){}}
+function samples(){
+  function off(n){var d=today();d.setDate(d.getDate()+n);return iso(d)}
+  function mk(o){return Object.assign({_ex:1},o)}
+  return [
+   mk({'Notice #':'CP2000-24-0187','Date':off(-40),'Theater':'US','Entity':'Northwind Holdings LLC','Tax':48200,'Interest':3110,'Penalty':9640,'Issue':'Unreported income, 2022 return','Response Date':off(-30),'Deadline':off(-3),'Priority':'High','Owner':'M. Alvarez','Status':'In Progress','Notes':'Waiting on K-1 from partner.'}),
+   mk({'Notice #':'HMRC-VAT-5531','Date':off(-12),'Theater':'UK','Entity':'Northwind Trading Ltd','Tax':12750,'Interest':410,'Penalty':0,'Issue':'VAT return discrepancy, Q2','Deadline':off(5),'Priority':'High','Owner':'J. Okafor','Status':'New'}),
+   mk({'Notice #':'CRA-T2-9902','Date':off(-20),'Theater':'Canada','Entity':'Northwind Canada Inc','Tax':6900,'Interest':180,'Penalty':350,'Issue':'Late-filed T2 schedule','Deadline':off(26),'Priority':'Medium','Owner':'M. Alvarez','Status':'Responded','Date Responded':off(-2)}),
+   mk({'Notice #':'IRS-CP14-0412','Date':off(-70),'Theater':'US','Entity':'Northwind Holdings LLC','Tax':1420,'Interest':55,'Penalty':0,'Issue':'Balance due notice','Deadline':off(-40),'Priority':'Low','Owner':'J. Okafor','Status':'Resolved','Date Responded':off(-60),'Date Resolved':off(-45)})
+  ];
+}
+function blank(){var r={};FIELDS.forEach(function(f){r[f.k]=''});r['Status']='New';r['Priority']='Medium';r['Date']=iso(today());return r}
+
+// Filters
+function fillSelect(id,opts){var s=$(id),first=s.options[0].outerHTML;s.innerHTML=first+opts.map(function(o){return'<option>'+esc(o)+'</option>'}).join('')}
+function pillClass(st){return st==='Overdue'?'p-bad':st==='Due soon'?'p-warn':st==='On track'?'p-ok':'p-idle'}
+function prClass(p){return p==='High'?'p-bad':p==='Medium'?'p-warn':p==='Low'?'p-idle':''}
+function stClass(s){return s==='Resolved'?'p-ok':s==='Responded'?'p-ok':s==='In Progress'?'p-warn':'p-idle'}
+
+function visible(){
+  var q=$('q').value.toLowerCase(),fs=$('fStatus').value,fp=$('fPriority').value,fd=$('fDeadline').value;
+  var out=rows.filter(function(r){
+    if(fs&&r['Status']!==fs)return false;if(fp&&r['Priority']!==fp)return false;if(fd&&r['Deadline Status']!==fd)return false;
+    if(q){var hay=['Notice #','Entity','Issue','Owner','Notes','Theater'].map(function(k){return r[k]||''}).join(' ').toLowerCase();if(hay.indexOf(q)<0)return false}
+    return true});
+  out.sort(function(a,b){var x=a[sortK],y=b[sortK];
+    if(x===''||x==null)return 1;if(y===''||y==null)return -1;
+    var c=(typeof x==='number'&&typeof y==='number')?x-y:String(x).localeCompare(String(y),undefined,{numeric:true});
+    return sortDesc?-c:c});
+  return out;
+}
+
+function render(){
+  rows.forEach(withCalc);
+  // stats
+  var open=rows.filter(function(r){return r['Deadline Status']!=='Resolved'});
+  var overdue=open.filter(function(r){return r['Deadline Status']==='Overdue'}).length;
+  var soon=open.filter(function(r){return r['Deadline Status']==='Due soon'}).length;
+  var exp=open.reduce(function(s,r){return s+(money(r['Tax'])||0)+(money(r['Interest'])||0)+(money(r['Penalty'])||0)},0);
+  $('stats').innerHTML=
+   '<div class="stat"><div class="k">Open notices</div><div class="v">'+open.length+'</div></div>'+
+   '<div class="stat bad"><div class="k">Overdue</div><div class="v">'+overdue+'</div></div>'+
+   '<div class="stat warn"><div class="k">Due within 7 days</div><div class="v">'+soon+'</div></div>'+
+   '<div class="stat"><div class="k">Open exposure</div><div class="v">'+fmtMoney(exp)+'</div></div>';
+  fillSel('fStatus',FIELDS.filter(function(f){return f.k==='Status'})[0].opts);
+  fillSel('fPriority',['High','Medium','Low']);
+  fillSel('fDeadline',['Overdue','Due soon','On track','No deadline','Resolved']);
+  // head
+  $('thead').innerHTML=COLS.map(function(c){return'<th data-k="'+esc(c)+'" class="'+(NUMS[c]?'num ':'')+(c===sortK?'sorted'+(sortDesc?' desc':''):'')+'">'+esc(c)+'</th>'}).join('');
+  var vis=visible();
+  $('tbody').innerHTML=vis.map(function(r){var i=rows.indexOf(r);
+    return'<tr data-i="'+i+'">'+COLS.map(function(c){var v=r[c],h;
+      if(c==='Tax')h=fmtMoney(v);
+      else if(c==='Deadline Status')h='<span class="pill '+pillClass(v)+'">'+esc(v)+'</span>';
+      else if(c==='Priority')h=v?'<span class="pill '+prClass(v)+'">'+esc(v)+'</span>':'';
+      else if(c==='Status')h='<span class="pill '+stClass(v)+'">'+esc(v)+'</span>';
+      else if(c==='Notice #')h=esc(v)+(r._ex?'<span class="ex">example</span>':'');
+      else h=esc(v);
+      return'<td class="'+(NUMS[c]?'num':(c==='Notice #'||c==='Date'||c==='Deadline'?'mono':''))+'">'+h+'</td>'}).join('')+'</tr>'}).join('');
+  var e=$('empty');e.hidden=vis.length>0;
+  e.textContent=rows.length?'No notices match these filters.':'No notices yet. Choose Add notice, or import your Excel file.';
+  var ex=rows.some(function(r){return r._ex});
+  $('foot').innerHTML=vis.length+' of '+rows.length+' notices. Saved in this browser.'+(ex?' Rows marked example are sample data. <button id="clearEx" class="danger">Remove examples</button>':'');
+  var ce=$('clearEx');if(ce)ce.onclick=function(){rows=rows.filter(function(r){return!r._ex});save();render()};
+}
+function fillSel(id,opts){var s=$(id),cur=s.value;fillSelect(id,opts);s.value=cur}
+
+// Drawer form
+function openForm(i){
+  editing=i;var r=i==null?blank():rows[i];
+  var secs=[];FIELDS.forEach(function(f){if(secs.indexOf(f.sec)<0)secs.push(f.sec)});
+  var html='<div class="scrim" id="scrim"></div><form class="drawer" id="form" autocomplete="off"><div class="dhead"><h2>'+(i==null?'New notice':'Notice '+esc(r['Notice #']))+'</h2><button type="button" id="dx" aria-label="Close">Close</button></div><div class="dbody">';
+  secs.forEach(function(s){
+    html+='<fieldset><legend>'+s+'</legend>';
+    FIELDS.filter(function(f){return f.sec===s}).forEach(function(f){
+      var id='f_'+f.k.replace(/\W+/g,'_'),v=r[f.k]==null?'':r[f.k],cls=f.wide?' class="wide"':'',inp;
+      if(f.t==='select')inp='<select id="'+id+'">'+f.opts.map(function(o){return'<option'+(o===v?' selected':'')+'>'+o+'</option>'}).join('')+'</select>';
+      else if(f.t==='area')inp='<textarea id="'+id+'">'+esc(v)+'</textarea>';
+      else if(f.t==='calc')inp='<input id="'+id+'" readonly value="'+esc(v)+'">';
+      else if(f.t==='date')inp='<input id="'+id+'" type="date" value="'+esc(normDate(v))+'">';
+      else if(f.t==='money')inp='<input id="'+id+'" type="number" step="0.01" min="0" value="'+esc(v)+'">';
+      else inp='<input id="'+id+'" type="text" value="'+esc(v)+'">';
+      html+='<label'+cls+'>'+esc(f.k)+(f.t==='calc'?' (automatic)':'')+inp+'</label>'});
+    html+='</fieldset>'});
+  html+='</div><div class="dfoot">'+(i!=null?'<button type="button" class="danger" id="del">Delete</button>':'')+'<span class="sp"></span><button type="button" id="cancel">Cancel</button><button type="submit" class="primary">Save notice</button></div></form>';
+  $('drawerHost').innerHTML=html;
+  var close=function(){$('drawerHost').innerHTML=''};
+  $('scrim').onclick=close;$('dx').onclick=close;$('cancel').onclick=close;
+  if(i!=null)$('del').onclick=function(){
+    this.textContent='Confirm delete';this.onclick=function(){rows.splice(i,1);save();close();render();toast('Notice deleted')}};
+  $('form').onsubmit=function(ev){ev.preventDefault();
+    var n=i==null?blank():rows[i];
+    FIELDS.forEach(function(f){if(f.t==='calc')return;var v=$('f_'+f.k.replace(/\W+/g,'_')).value;
+      if(f.t==='money')v=v===''?'':parseFloat(v);n[f.k]=v});
+    if(!String(n['Notice #']).trim()){toast('Enter a Notice # first');$('f_Notice_').focus();return}
+    if(n['Status']==='Resolved'&&!n['Date Resolved'])n['Date Resolved']=iso(today());
+    if(n['Status']==='Responded'&&!n['Date Responded'])n['Date Responded']=iso(today());
+    n['Last Sync']=new Date().toISOString().slice(0,16).replace('T',' ');
+    delete n._ex;
+    if(i==null)rows.push(n);
+    save();close();render();toast('Notice saved')};
+  var first=$('f_Notice_');if(first)first.focus();
+}
+function toast(m){var t=document.createElement('div');t.className='toast';t.textContent=m;$('toastHost').appendChild(t);setTimeout(function(){t.remove()},2200)}
+
+// Import / export
+function toRecord(o){var r=blank();r['Status']='New';r['Priority']='';
+  FIELDS.forEach(function(f){if(o[f.k]==null||o[f.k]==='')return;var v=o[f.k];
+    if(f.t==='date')v=normDate(v);else if(f.t==='money')v=money(v);
+    else if(f.t==='select'){var m=f.opts.filter(function(x){return x.toLowerCase()===String(v).toLowerCase()})[0];v=m||f.opts[0]}
+    r[f.k]=v});return r}
+function importFile(file){
+  if(!window.XLSX){toast('Excel library did not load');return}
+  var fr=new FileReader();fr.onload=function(){
+    try{var wb=XLSX.read(fr.result,{type:'array',cellDates:true});var ws=wb.Sheets[wb.SheetNames[0]];
+      var data=XLSX.utils.sheet_to_json(ws,{defval:'',raw:true});
+      var recs=data.filter(function(o){return Object.keys(o).some(function(k){return o[k]!==''})}).map(toRecord);
+      if(!recs.length){toast('No data rows found under the headers');return}
+      rows=rows.filter(function(r){return!r._ex}).concat(recs);save();render();toast('Imported '+recs.length+' notices')}
+    catch(e){toast('Could not read that file')}};
+  fr.readAsArrayBuffer(file)}
+function tableAOA(){rows.forEach(withCalc);var head=FIELDS.map(function(f){return f.k});
+  return [head].concat(rows.map(function(r){return head.map(function(k){return r[k]==null?'':r[k]})}))}
+function csv(){return tableAOA().map(function(row){return row.map(function(c){c=String(c);return/[",\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c}).join(',')}).join('\n')}
+function exportXlsx(){
+  if(!window.XLSX){toast('Excel library did not load');return}
+  try{var ws=XLSX.utils.aoa_to_sheet(tableAOA()),wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Sheet1');
+    XLSX.writeFile(wb,'Notice-Tracker.xlsx');toast('Exported Notice-Tracker.xlsx (use Copy CSV if no file appears)')}
+  catch(e){toast('Export failed. Use Copy CSV instead.')}}
+function copyCsv(){var t=csv();
+  var fallback=function(){var a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();try{document.execCommand('copy');toast('CSV copied')}catch(e){toast('Copy not available here')}a.remove()};
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(function(){toast('CSV copied. Paste into Excel.')},fallback);else fallback()}
+
+// Wire up
+$('btnAdd').onclick=function(){openForm(null)};
+$('btnImport').onclick=function(){$('file').click()};
+$('file').onchange=function(){if(this.files[0])importFile(this.files[0]);this.value=''};
+$('btnXlsx').onclick=exportXlsx;$('btnCsv').onclick=copyCsv;
+['q','fStatus','fPriority','fDeadline'].forEach(function(id){$(id).addEventListener('input',render)});
+$('thead').onclick=function(e){var th=e.target.closest('th');if(!th)return;var k=th.dataset.k;if(sortK===k)sortDesc=!sortDesc;else{sortK=k;sortDesc=false}render()};
+$('tbody').onclick=function(e){var tr=e.target.closest('tr');if(tr)openForm(+tr.dataset.i)};
+load();render();
+})();
+</script>
